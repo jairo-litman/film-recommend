@@ -2,12 +2,22 @@ import streamlit as st
 from src.models.recommender import MovieRecommender
 import dotenv
 import pandas as pd
+from src.texts import translations
 
 st.set_page_config(
     page_title="Movie Recommender",
     page_icon="🎬",
     layout="wide",
 )
+
+lang_option = st.sidebar.radio(
+    "Language / Idioma",
+    ["English", "Português"],
+    index=0,
+)
+
+lang_code = "en" if lang_option == "English" else "pt"
+t = translations[lang_code]
 
 
 @st.cache_resource
@@ -26,65 +36,54 @@ except Exception as e:
     st.error(f"Error loading model: {e}")
     st.stop()
 
-st.sidebar.title("📊 Análise de Dados")
-st.sidebar.info("Dataset: TMDB 10k Most Popular Movies")
+st.sidebar.title(t["sidebar_title"])
+st.sidebar.info(t["sidebar_info"])
 
-if st.sidebar.checkbox("Mostrar Gráficos do Dataset", value=True):
-    st.sidebar.subheader("Distribuição de Popularidade")
+if st.sidebar.checkbox(t["show_charts"], value=True):
+    st.sidebar.subheader(t["chart_title"])
     st.sidebar.line_chart(recommender.df["popularity"].head(20))
-    st.sidebar.markdown(
-        "**Técnica Aplicada:** Content-Based Filtering usando Cosine Similarity em vetores de texto (Genres + Keywords)."
-    )
+    st.sidebar.markdown(t["tech_explanation"])
 
-st.title("🎬 Sistema de Recomendação de Filmes")
-st.markdown("Encontre seu próximo filme favorito usando Inteligência Artificial.")
+st.title(t["app_title"])
+st.markdown(t["app_subtitle"])
 
-
-tab1, tab2 = st.tabs(
-    ["🔍 Busca por Filme Similar", "🧠 Busca por Preferências (Gen/Keywords)"]
-)
+tab1, tab2 = st.tabs([t["tab1"], t["tab2"]])
 
 with tab1:
-    st.header("Porque você gostou de...")
+    st.header(t["tab1_header"])
     selected_movie = st.selectbox(
-        "Escolha um filme:", recommender.get_all_titles(), index=0
+        t["select_movie"], recommender.get_all_titles(), index=0
     )
 
-    if st.button("Recomendar por Filme"):
+    if st.button(t["btn_recommend"]):
         recommendations = recommender.recommend_by_movie(selected_movie)
 
         if recommendations:
-            st.success(f"Filmes similares a **{selected_movie}**:")
+            st.success(t["success_movie"].format(selected_movie))
             cols = st.columns(5)
             for idx, movie in enumerate(recommendations):
                 with cols[idx]:
-                    # Display Poster if available
                     if pd.notna(movie["poster_path"]):
                         full_path = (
                             "https://image.tmdb.org/t/p/w500" + movie["poster_path"]
                         )
                         st.image(full_path, use_container_width=True)
                     st.markdown(f"**{movie['title']}**")
-                    st.caption(f"Semelhança: {int(movie['score'] * 100)}%")
-                    with st.popover("Ver Sinopse"):
+                    st.caption(f"{t['similarity']}: {int(movie['score'] * 100)}%")
+                    with st.popover(t["popover"]):
                         st.write(movie["overview"])
 
-
 with tab2:
-    st.header("Descreva o que você quer ver")
-    st.markdown(
-        "Digite gêneros ou elementos de enredo (ex: *Action, Space, Robots, Love*)."
-    )
+    st.header(t["tab2_header"])
+    st.markdown(t["tab2_sub"])
 
-    user_text = st.text_input(
-        "Suas preferências:", placeholder="Ex: Science Fiction time travel paradox"
-    )
+    user_text = st.text_input("Input:", placeholder=t["input_placeholder"])
 
-    if st.button("Recomendar por Texto"):
+    if st.button(t["btn_text_rec"]):
         if user_text:
             recommendations = recommender.recommend_by_keywords(user_text)
 
-            st.success(f"Melhores matches para: **'{user_text}'**")
+            st.success(t["success_text"].format(user_text))
             cols = st.columns(5)
             for idx, movie in enumerate(recommendations):
                 with cols[idx]:
@@ -95,10 +94,11 @@ with tab2:
                         st.image(full_path, use_container_width=True)
                     st.markdown(f"**{movie['title']}**")
                     st.caption(f"Score: {int(movie['score'] * 100)}%")
-                    with st.popover("Ver Sinopse"):
+                    with st.popover(t["popover"]):
                         st.write(movie["overview"])
         else:
-            st.warning("Por favor, digite algo para buscarmos.")
+            st.warning(t["warning_input"])
 
+# Footer
 st.divider()
-st.caption("Desenvolvido para a disciplina de Inteligência Artificial - BSI")
+st.caption(t["footer"])

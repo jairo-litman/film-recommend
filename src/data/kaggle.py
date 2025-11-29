@@ -38,6 +38,8 @@ def clean_and_reduce_data():
     df_final["keywords"] = df_final["keywords"].fillna("")
     df_final["overview"] = df_final["overview"].fillna("")
 
+    df_final = df_final.sort_values(by="title").reset_index(drop=True)
+
     output_file = (
         dotenv.get_key(dotenv.find_dotenv(), "DATASET_NAME") or "movies_top10k.csv"
     )
