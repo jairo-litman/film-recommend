@@ -1,0 +1,14 @@
+[project]
+name = "film-recommend"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "dotenv>=0.9.9",
+    "kagglehub[pandas-datasets]>=0.3.13",
+    "pandas>=2.3.3",
+    "plotly>=6.5.0",
+    "scikit-learn>=1.7.2",
+    "streamlit>=1.51.0",
+]
