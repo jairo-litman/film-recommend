@@ -3,6 +3,7 @@ import kagglehub
 import os
 from dotenv import load_dotenv
 import dotenv
+import logging
 
 
 def clean_and_reduce_data():
@@ -11,13 +12,13 @@ def clean_and_reduce_data():
 
     df = pd.read_csv(csv_path)
 
-    print(f"   Original shape: {df.shape}")
+    logging.log(f"Original shape: {df.shape}")
 
     df_filtered = df[(df["vote_count"] > 50) & (~df["adult"])].copy()
 
     df_filtered = df_filtered.sort_values(by="popularity", ascending=False).head(10000)
 
-    print(f"   Reduced shape: {df_filtered.shape}")
+    logging.log(f"Reduced shape: {df_filtered.shape}")
 
     cols_to_keep = [
         "id",
@@ -45,7 +46,7 @@ def clean_and_reduce_data():
     )
     df_final.to_csv(output_file, index=False)
 
-    print(f"   Cleaned data saved to: {output_file}")
+    logging.log(f"Cleaned data saved to: {output_file}")
 
 
 if __name__ == "__main__":

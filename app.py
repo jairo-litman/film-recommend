@@ -1,23 +1,18 @@
 import streamlit as st
-from src.models.recommender import MovieRecommender
 import dotenv
+from src.models.recommender import MovieRecommender
+from src.ui.translator import Translator
+from src.ui.pages.by_movie import render_tab as render_by_movie
+from src.ui.pages.by_keywords import render_tab as render_by_keywords
+from src.ui.pages.add_movie import render_tab as render_add_movie
+from src.ui.pages.profile import render_tab as render_profile
 import pandas as pd
-from src.texts import translations
 
-st.set_page_config(
-    page_title="Movie Recommender",
-    page_icon="🎬",
-    layout="wide",
-)
+st.set_page_config(page_title="Movie Recommender", page_icon="🎬", layout="wide")
 
-lang_option = st.sidebar.radio(
-    "Language / Idioma",
-    ["English", "Português"],
-    index=0,
-)
-
+lang_option = st.sidebar.radio("Language / Idioma", ["English", "Português"], index=0)
 lang_code = "en" if lang_option == "English" else "pt"
-t = translations[lang_code]
+t = Translator(lang_code)
 
 
 @st.cache_resource
@@ -36,69 +31,44 @@ except Exception as e:
     st.error(f"Error loading model: {e}")
     st.stop()
 
-st.sidebar.title(t["sidebar_title"])
-st.sidebar.info(t["sidebar_info"])
+st.sidebar.title(t("sidebar_title"))
+st.sidebar.info(t("sidebar_info"))
 
-if st.sidebar.checkbox(t["show_charts"], value=True):
-    st.sidebar.subheader(t["chart_title"])
-    st.sidebar.line_chart(recommender.df["popularity"].head(20))
-    st.sidebar.markdown(t["tech_explanation"])
+if st.sidebar.checkbox(t("show_charts"), value=True):
+    st.sidebar.subheader(t("chart_title"))
 
-st.title(t["app_title"])
-st.markdown(t["app_subtitle"])
-
-tab1, tab2 = st.tabs([t["tab1"], t["tab2"]])
-
-with tab1:
-    st.header(t["tab1_header"])
-    selected_movie = st.selectbox(
-        t["select_movie"], recommender.get_all_titles(), index=0
+    top_movies = (
+        recommender.df.nlargest(20, "popularity")[["title", "popularity"]]
+        .copy()
+        .reset_index(drop=True)
     )
 
-    if st.button(t["btn_recommend"]):
-        recommendations = recommender.recommend_by_movie(selected_movie)
+    top_movies["title"] = top_movies["title"].astype(str).str[:25]
+    top_movies = top_movies.sort_values("popularity", ascending=False)
+    top_movies = top_movies.set_index("title")
 
-        if recommendations:
-            st.success(t["success_movie"].format(selected_movie))
-            cols = st.columns(5)
-            for idx, movie in enumerate(recommendations):
-                with cols[idx]:
-                    if pd.notna(movie["poster_path"]):
-                        full_path = (
-                            "https://image.tmdb.org/t/p/w500" + movie["poster_path"]
-                        )
-                        st.image(full_path, use_container_width=True)
-                    st.markdown(f"**{movie['title']}**")
-                    st.caption(f"{t['similarity']}: {int(movie['score'] * 100)}%")
-                    with st.popover(t["popover"]):
-                        st.write(movie["overview"])
+    top_movies.index = pd.CategoricalIndex(
+        top_movies.index,
+        categories=top_movies.index,
+        ordered=True,
+    )
 
-with tab2:
-    st.header(t["tab2_header"])
-    st.markdown(t["tab2_sub"])
+    st.sidebar.bar_chart(top_movies)
+    st.sidebar.markdown(t("tech_explanation"))
 
-    user_text = st.text_input("Input:", placeholder=t["input_placeholder"])
+st.title(t("app_title"))
+st.markdown(t("app_subtitle"))
 
-    if st.button(t["btn_text_rec"]):
-        if user_text:
-            recommendations = recommender.recommend_by_keywords(user_text)
+tabs = st.tabs([t("tab1"), t("tab2"), t("tab3"), t("tab4")])
 
-            st.success(t["success_text"].format(user_text))
-            cols = st.columns(5)
-            for idx, movie in enumerate(recommendations):
-                with cols[idx]:
-                    if pd.notna(movie["poster_path"]):
-                        full_path = (
-                            "https://image.tmdb.org/t/p/w500" + movie["poster_path"]
-                        )
-                        st.image(full_path, use_container_width=True)
-                    st.markdown(f"**{movie['title']}**")
-                    st.caption(f"Score: {int(movie['score'] * 100)}%")
-                    with st.popover(t["popover"]):
-                        st.write(movie["overview"])
-        else:
-            st.warning(t["warning_input"])
+with tabs[0]:
+    render_by_movie(recommender, t)
+with tabs[1]:
+    render_by_keywords(recommender, t)
+with tabs[2]:
+    render_add_movie(recommender, t)
+with tabs[3]:
+    render_profile(recommender, t)
 
-# Footer
 st.divider()
-st.caption(t["footer"])
+st.caption(t("footer"))

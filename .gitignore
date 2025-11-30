@@ -13,3 +13,6 @@ wheels/
 
 .kagglehub/
 
+user_movies.json
+user_ratings.json
+
