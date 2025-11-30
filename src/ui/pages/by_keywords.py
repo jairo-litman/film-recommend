@@ -9,7 +9,9 @@ def render_tab(recommender: MovieRecommender, t: Translator):
     st.markdown(t("tab2_sub"))
 
     user_text = st.text_input(
-        "", placeholder=t("input_placeholder"), key="keyword_input"
+        t("input_keywords"),
+        placeholder=t("input_placeholder"),
+        key="keyword_input",
     )
     profile_weight = (
         st.slider(

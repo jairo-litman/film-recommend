@@ -23,7 +23,7 @@ class MovieRecommender:
             stop_words="english",
             ngram_range=(1, 2),  # Include unigrams and bigrams
             min_df=2,  # Ignore terms that appear in less than 2 documents
-            max_df=0.8  # Ignore terms that appear in more than 80% of documents
+            max_df=0.8,  # Ignore terms that appear in more than 80% of documents
         )
         self.vectors: Optional[np.ndarray] = None
         self.df: pd.DataFrame = self._load_movies()
@@ -120,7 +120,11 @@ class MovieRecommender:
         if self.vectors is None:
             raise RuntimeError("Model not fitted. Call fit() first.")
 
-        query_vec = self.vectorizer.transform([keywords]).toarray()
+        split_keywords = [kw.strip() for kw in keywords.split(",") if kw.strip()]
+        if not split_keywords:
+            return []
+
+        query_vec = self.vectorizer.transform(split_keywords).toarray()
         query_scores = cosine_similarity(query_vec, self.vectors)[0]
 
         if profile_weight > 0:
