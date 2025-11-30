@@ -1,0 +1,36 @@
+% This is a LaTeX template for homework solving, intended to be: 
+
+% 1. Easy to use;
+% 2. Elegant;
+% 3. Self-explanatory.
+
+% It was written by Lucas R. Ximenes (Jimeens)
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\documentclass{solutionclass} % I wrote the design using a4paper, 11pt, twoside, but feel free to change in solutionclass.cls file (line 4)
+
+\pagestyle{plain}
+
+\begin{document}
+
+\pretitle
+{Sistema Inteligente}               % ⟸ Write your main Title here
+{Trabalho Final}        % ⟸ Write your subtitle here
+{Jairo Kapta Berniger Litman}
+{Marcelo Kenji Ichikawa}                 % ⟸ Write your name here
+
+% Change your homework number here
+\def\homeworkNumber{1}
+
+\makeatletter
+\startcontents[sections]
+\phantomsection
+\chapter{Sistema Inteligente com Deploy em Streamlit}
+\makeatother
+
+\foreach \n in {1,...,1} {
+		% \input{tex/0\n.tex}
+	}
+
+\end{document}
