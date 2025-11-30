@@ -83,7 +83,8 @@
 	calc, % Provide additional mathematical functions.
 	3d, % Create three-dimensional TikZ diagrams.
 	patterns,
-    trees
+    trees,
+    positioning
 }
 \pgfplotsset{compat=1.18} % Sets the compatibility level for the pgfplots package to version 1.18, ensuring consistent compilation of plots and diagrams in the document.
 

@@ -29,8 +29,463 @@
 \chapter{Sistema Inteligente com Deploy em Streamlit}
 \makeatother
 
-\foreach \n in {1,...,1} {
-		% \input{tex/0\n.tex}
-	}
+\section{Introdução}
+\divider
+
+O objetivo principal deste trabalho é o desenvolvimento de um \textbf{sistema inteligente de recomendação de filmes}, integrando técnicas de processamento de linguagem natural e modelagem de preferências do usuário em uma aplicação interativa acessível via web.
+
+O sistema oferece três modalidades complementares de recomendação:
+\begin{enumerate}
+	\item \textbf{Recomendação por semelhança textual}: dado um filme selecionado, o sistema identifica títulos semanticamente próximos com base em gêneros, palavras-chave e sinopse.
+	\item \textbf{Recomendação por consulta livre}: o usuário fornece termos descritivos (ex: ``viagem no tempo, distopia, resistência'') e o sistema retorna filmes alinhados ao perfil temático desejado.
+	\item \textbf{Recomendação personalizada}: a partir do histórico de interações explícitas do usuário (marcações de ``like'' e ``dislike''), o sistema constrói dinamicamente um perfil de preferência e ajusta as recomendações.
+\end{enumerate}
+
+Além disso, a aplicação permite:
+\begin{itemize}
+	\item Inclusão de novos filmes ao catálogo, com preenchimento de metadados essenciais (título, gêneros, palavras-chave e sinopse);
+	\item Registro e remoção de avaliações em tempo real;
+	\item Visualização de resultados com destaque para similaridade, gêneros e resumo dos filmes sugeridos.
+\end{itemize}
+
+Todo o sistema foi implementado em Python e disponibilizado por meio de uma interface web desenvolvida com \textbf{Streamlit}.
+\section{Dataset}
+\divider
+
+O sistema foi desenvolvido com base no dataset \textit{``Full TMDB Movies Dataset 2024 (1M Movies)''}, obtido da plataforma Kaggle~\footnote{\url{https://www.kaggle.com/datasets/asaniczka/tmdb-movies-dataset-2023-930k-movies}}. Trata-se de um conjunto abrangente contendo metadados de aproximadamente mais de 1 milhão de filmes coletados da API do The Movie Database (TMDb), incluindo informações estruturadas e textuais relevantes para tarefas de recomendação.
+
+Visando equilibrar diversidade, qualidade dos dados e desempenho computacional, realizamos um processo rigoroso de filtragem e pré-processamento:
+
+\begin{enumerate}
+	\item \textbf{Filtragem por confiabilidade:} mantivemos apenas filmes com pelo menos 50 avaliações (\texttt{vote\_count > 50}) e marcados como não adultos (\texttt{adult = False}), garantindo maior representatividade das notas e adequação geral ao público.
+	\item \textbf{Amostragem por popularidade:} ordenamos os filmes pela métrica \texttt{popularity} (indicador agregado de engajamento no TMDb) e selecionamos os 10.000 mais populares, priorizando conteúdos com maior reconhecimento e disponibilidade de metadados.
+	\item \textbf{Seleção de atributos relevantes:} foram mantidas apenas as colunas pertinentes à recomendação baseada em conteúdo.
+	\item \textbf{Tratamento de valores ausentes:} campos textuais (\texttt{genres}, \texttt{keywords}, \texttt{overview}) tiveram valores nulos substituídos por strings vazias, evitando falhas na vetorização textual.
+	\item \textbf{Ordenação e persistência:} o dataset final foi ordenado alfabeticamente por título e salvo como \texttt{movies\_top10k.csv}.
+\end{enumerate}
+
+\begin{center}
+	\begin{tabular}{ll}
+		\toprule
+		\textbf{Coluna}        & \textbf{Descrição}                                         \\
+		\midrule
+		\texttt{id}            & Identificador único (TMDb)                                 \\
+		\texttt{title}         & Título original do filme                                   \\
+		\texttt{genres}        & Lista de gêneros (ex: ``Action, Drama'')                   \\
+		\texttt{keywords}      & Palavras-chave descritivas (ex: ``time travel, dystopia'') \\
+		\texttt{overview}      & Sinopse/resumo do enredo                                   \\
+		\texttt{release\_date} & Data de lançamento (formato YYYY-MM-DD)                    \\
+		\texttt{vote\_average} & Média de avaliação (escala 0–10)                           \\
+		\texttt{vote\_count}   & Número de avaliações coletadas                             \\
+		\texttt{popularity}    & Índice de popularidade normalizado (TMDb)                  \\
+		\texttt{runtime}       & Duração em minutos                                         \\
+		\texttt{poster\_path}  & Link para pôster                                           \\
+		\bottomrule
+	\end{tabular}
+\end{center}
+
+\section{Metodologia}
+\divider
+
+A metodologia desenvolvida para este sistema de recomendação baseia-se na abordagem de \textit{Content-Based Filtering} (Filtragem Baseada em Conteúdo). O sistema opera mediante a transformação de dados textuais não estruturados, especificamente sinopses e gêneros cinematográficos, em representações numéricas dentro de um espaço vetorial multidimensional.
+
+A seguir, detalhamos os algoritmos implementados e a justificativa técnica para cada decisão arquitetural.
+
+\subsection{Vetorização e Representação Textual (TF-IDF)}
+
+O passo fundamental em Processamento de Linguagem Natural (NLP) consiste na conversão de texto subjetivo em vetores processáveis matematicamente. Para tal, empregamos o algoritmo \textbf{TF-IDF} (\textit{Term Frequency-Inverse Document Frequency}).
+
+Ao contrário de uma contagem simples de ocorrências (Bag of Words), o TF-IDF atribui um peso a cada termo, fundamentado na premissa de que a especificidade de uma palavra é inversamente proporcional à sua frequência global no conjunto de dados.
+
+O cálculo pondera dois componentes estatísticos:
+
+\begin{enumerate}
+	\item \textbf{TF (Term Frequency):} A frequência local do termo. Mede a relevância da palavra dentro do documento específico (sinopse) analisado.
+
+	\item \textbf{IDF (Inverse Document Frequency):} A raridade global do termo. Penaliza palavras que ocorrem em uma vasta quantidade de documentos no catálogo, pois estas oferecem baixo poder discriminativo para classificação.
+\end{enumerate}
+
+Matematicamente, o peso $w$ de um termo $t$ em um documento $d$ é dado por:
+\begin{equation*}
+	w_{t,d} = \text{tf}(t,d) \times \log\left(\frac{N}{\text{df}(t)}\right)
+\end{equation*}
+\noindent onde $N$ é o total de filmes, $\text{df}(t)$ é o número de documentos que contêm o termo e $\text{tf}(t,d)$ é a frequência do termo $t$ no documento $d$.
+
+\subsubsection*{Análise de Caso}
+Para ilustrar a aplicação do algoritmo, considere a vetorização da sinopse do filme \textit{``Alien: O Oitavo Passageiro''} em relação ao catálogo:
+
+\begin{itemize}
+	\item \textbf{Artigos e Preposições (ex: ``o'', ``de''):} Embora possuam alta frequência local (TF), aparecem em quase a totalidade dos documentos (IDF próximo de zero). O produto resultante tende a zero, permitindo que o modelo trate estes termos como ruído (\textit{stop words}).
+
+	\item \textbf{Termos Genéricos (ex: ``filme'', ``cinema''):} Possuem frequência moderada, mas baixa capacidade de distinção temática. Recebem pesos baixos, influenciando minimamente o vetor final.
+
+	\item \textbf{Termos Específicos (ex: ``xenomorfo'', ``Nostromo''):} Apresentam alta frequência local neste documento específico e são raros no restante do catálogo (IDF alto). O resultado é um peso elevado, tornando estes termos as ``assinaturas vetoriais'' da obra.
+\end{itemize}
+
+\subsubsection*{Parametrização do Modelo}
+Para refinar a captura de nuances semânticas, o vetorizador foi configurado com os seguintes parâmetros:
+
+\begin{itemize}
+	\item \textbf{N-grams (1, 2):} O modelo considera tanto unigramas (palavras isoladas) quanto bigramas (pares de palavras consecutivas). Isso permite diferenciar termos compostos, onde a união das palavras altera o sentido original (ex: ``New York'' é tratado como uma entidade geográfica única, distinta de ``New'' e ``York'' isoladamente).
+
+	\item \textbf{Limitação de Dimensionalidade:} O espaço vetorial foi restringido às 5.000 \textit{features} mais relevantes. Adicionalmente, aplicou-se um filtro de frequência mínima e máxima para eliminar termos excessivamente raros (possíveis erros de grafia) ou onipresentes (que não agregam valor semântico), otimizando o desempenho computacional e a precisão das recomendações.
+\end{itemize}
+
+\subsubsection{Construção do Espaço Vetorial}
+
+A aplicação prática do algoritmo TF-IDF sobre o conjunto de filmes resulta na construção de uma \textbf{Matriz Documento-Termo}. Nesta estrutura, o vocabulário aprendido atua como as dimensões do espaço vetorial, enquanto cada filme é representado como um ponto neste hiperespaço.
+
+O processo de conversão segue a seguinte lógica estrutural:
+
+\begin{enumerate}
+	\item \textbf{Definição de Dimensões (Colunas):} O algoritmo varre todo o conjunto de dados e seleciona os 5.000 termos (unigramas ou bigramas) mais relevantes de acordo com os critérios de frequência estabelecidos. Cada um destes termos torna-se um eixo ortogonal no espaço vetorial.
+
+	\item \textbf{Mapeamento (Linhas):} Cada filme do catálogo ocupa uma linha na matriz. O valor da célula $M_{i,j}$ (filme $i$, termo $j$) corresponde ao peso $w$ calculado pela fórmula TF-IDF.
+
+	\item \textbf{Esparsidade:} Dada a natureza da linguagem, um filme específico contém apenas uma pequena fração do vocabulário total de 5.000 palavras. Consequentemente, a vasta maioria das células da matriz é preenchida com zeros. Matematicamente, o sistema lida com uma \textbf{Matriz Esparsa}, o que otimiza drasticamente o armazenamento em memória e a velocidade das operações de álgebra linear.
+\end{enumerate}
+
+Dessa forma, transformamos descrições semânticas subjetivas em vetores numéricos fixos $\vec{v} \in \mathbb{R}^{5000}$. Por exemplo, se a dimensão 42 corresponde à palavra ``alien'' e a dimensão 105 à palavra ``espaço'', o vetor do filme \textit{Alien} terá valores positivos significativos nestas coordenadas, enquanto o vetor de um romance de época terá valor zero nas mesmas, posicionando-os em regiões opostas do espaço geométrico.
+
+\subsection{Cálculo de Similaridade (Cosseno)}
+
+Com os filmes representados em um espaço de 5.000 dimensões, a proximidade semântica entre eles é calculada através da \textbf{Similaridade de Cosseno}.
+
+A escolha desta métrica em detrimento da Distância Euclidiana justifica-se pela natureza dos dados textuais. Enquanto a Distância Euclidiana mede a magnitude da diferença (o que penalizaria sinopses mais longas ou detalhadas), a Similaridade de Cosseno mede a \textbf{orientação} dos vetores.
+
+Em análise de texto, o tamanho do documento não deve alterar sua classificação temática. Se dois filmes tratam de ``Viagem Espacial'', seus vetores apontarão para a mesma direção no hiperespaço, independentemente de uma sinopse ter 20 palavras e a outra 200.
+
+A métrica é obtida pelo produto escalar normalizado dos vetores $A$ e $B$:
+
+\begin{equation*}
+	\text{sim}(A, B) = \cos(\theta) = \frac{A \cdot B}{\|A\| \|B\|}
+\end{equation*}
+
+\subsubsection*{Interpretação dos Resultados}
+O resultado $\cos(\theta)$ varia entre 0 e 1 no contexto de TF-IDF (onde os pesos não são negativos):
+
+\begin{itemize}
+	\item \textbf{Cosseno $\approx$ 1 (Vetores Colineares):} Indica alta similaridade semântica.
+	      \textit{Exemplo:} \textit{``Toy Story''} e \textit{``Toy Story 2''} compartilham vocabulário central significativo, resultando em um ângulo próximo de zero.
+
+	\item \textbf{Cosseno $\approx$ 0 (Vetores Ortogonais):} Indica ausência de correlação semântica.
+	      \textit{Exemplo:} \textit{``O Poderoso Chefão''} e \textit{``Barbie''}. Como não compartilham termos relevantes, seus vetores são perpendiculares no espaço (90º), resultando em similaridade nula.
+
+	\item \textbf{Valores Intermediários:} Representam interseções parciais de temas.
+	      \textit{Exemplo:} Filmes de guerra espacial e filmes de guerra histórica podem apresentar similaridade mediana devido ao compartilhamento de termos bélicos, apesar da divergência no cenário (espaço vs. terra).
+\end{itemize}
+
+\begin{center}
+	\begin{tikzpicture}[
+		vector/.style={thick, -{Stealth[length=3mm]}, line cap=round},
+		axis/.style={->, thin, gray},
+		every node/.style={font=\sffamily}
+		]
+
+		\begin{scope}[local bounding box=highsim]
+			\coordinate (O) at (0,0);
+			\coordinate (midpoint) at (2, 0);
+
+			\draw[axis] (O) -- (4,0) node[right] {\scriptsize Dimensão $i$};
+			\draw[axis] (O) -- (0,4) node[above] {\scriptsize Dimensão $j$};
+
+			\draw[vector, myLColor] (O) -- (3.5, 1.5) coordinate (A) node[right] {Filme A};
+			\draw[vector, red!50] (O) -- (2.8, 2.2) coordinate (B) node[above] {Filme B};
+
+			\pic [draw,
+				fill=green!20,
+				angle radius=1cm,
+				pic text={$\theta \approx 0^\circ$},
+				angle eccentricity=1.5] {angle = A--O--B};
+
+			\node[below=1cm of midpoint, align=center] {
+				\textbf{Alta Similaridade}\\
+				$\cos(\theta) \approx 1$\\
+				\footnotesize (Ex: Toy Story 1 \& 2)
+			};
+		\end{scope}
+
+		\begin{scope}[xshift=7cm, local bounding box=lowsim]
+			\coordinate (O) at (0,0);
+			\coordinate (midpoint) at (2, 0);
+
+			\draw[axis] (O) -- (4,0) node[right] {\scriptsize Dimensão $i$};
+			\draw[axis] (O) -- (0,4) node[above] {\scriptsize Dimensão $j$};
+
+			\draw[vector, orange] (O) -- (3.8, 0.5) coordinate (C) node[right] {Filme C};
+			\draw[vector, violet!60] (O) -- (0.5, 3.5) coordinate (D) node[right] {Filme D};
+
+			\pic [draw,
+				fill=gray!20,
+				angle radius=0.8cm,
+				pic text={$\theta \approx 90^\circ$},
+				angle eccentricity=1.5] {angle = C--O--D};
+
+			\node[below=1cm of midpoint, align=center] {
+				\textbf{Baixa Similaridade}\\
+				$\cos(\theta) \approx 0$\\
+				\footnotesize (Ex: Poderoso Chefão \& Barbie)
+			};
+		\end{scope}
+	\end{tikzpicture}
+\end{center}
+
+\subsection{Perfil do Usuário (Adaptação de Rocchio)}
+
+Para viabilizar a personalização dinâmica, implementamos uma adaptação do \textbf{Algoritmo de Rocchio}. Originalmente concebido para sistemas de recuperação de informação, este método utiliza o conceito de \textit{Feedback de Relevância} para refinar consultas.
+
+No contexto deste projeto, o algoritmo constrói um perfil de usuário calculando um \textbf{vetor centróide}. Geometricamente, o vetor do usuário move-se pelo espaço vetorial aproximando-se das regiões temáticas dos itens avaliados positivamente e distanciando-se dos itens avaliados negativamente.
+
+\subsubsection*{Formalização Matemática}
+Diferente da implementação clássica que modifica uma \textit{query} inicial, nosso sistema constrói o vetor do usuário ($\vec{v}_{user}$) exclusivamente a partir do histórico de interações, conforme a equação:
+
+\begin{equation*}
+	\vec{v}_{user} = \alpha \cdot \left( \frac{1}{|L|} \sum_{i \in L} \vec{v}_i \right) - \beta \cdot \left( \frac{1}{|D|} \sum_{j \in D} \vec{v}_j \right)
+\end{equation*}
+
+Onde:
+\begin{itemize}
+	\item $L$ e $D$ representam os conjuntos de filmes com \textit{Likes} e \textit{Dislikes}, respectivamente.
+	\item $\vec{v}_i$ e $\vec{v}_j$ são os vetores TF-IDF dos filmes nesses conjuntos.
+	\item A divisão por $|L|$ e $|D|$ normaliza os vetores, garantindo que o perfil represente a preferência média e não seja distorcido pela quantidade absoluta de interações.
+\end{itemize}
+
+\subsubsection*{Definição de Hiperparâmetros}
+Os coeficientes $\alpha$ e $\beta$ controlam a influência do feedback positivo e negativo. Definimos:
+
+\begin{itemize}
+	\item $\alpha = 1.0$ (Peso do Feedback Positivo)
+	\item $\beta = 0.5$ (Peso do Feedback Negativo)
+\end{itemize}
+
+A decisão de manter $\beta < \alpha$ baseia-se na heurística de recomendação onde a indicação positiva é um sinal mais forte de preferência do que a negativa. Um peso negativo excessivo poderia restringir severamente o espaço de busca, eliminando gêneros inteiros devido à rejeição de um único título específico. Com essa configuração, o sistema prioriza a aproximação dos interesses do usuário, utilizando as rejeições apenas para refinar a precisão, sem causar exclusões excessivas.
+
+\subsection{Implementação e Aplicação do Perfil do Usuário}
+
+A operacionalização do modelo de Rocchio no sistema ocorre em duas etapas distintas: a construção do vetor sintético do usuário e a aplicação deste vetor nas funções de recuperação de informação.
+
+\subsubsection{Construção do Vetor de Preferência}
+
+O sistema processa o histórico de interações do usuário não como uma lista estática, mas como clusters de vetores no hiperespaço. O procedimento algorítmico segue uma sequência lógica de agregação e subtração vetorial:
+
+\begin{enumerate}
+	\item \textbf{Segregação de Clusters:} O sistema itera sobre o dicionário de avaliações, separando os índices dos filmes em dois subconjuntos distintos: o conjunto de aprovação ($L$) e o conjunto de rejeição ($D$).
+
+	\item \textbf{Cálculo dos Centróides:} Para cada subconjunto, calcula-se a média aritmética de todos os vetores contidos nele. Isso resulta em dois vetores representativos:
+	      \begin{itemize}
+		      \item \textbf{Centróide Positivo:} Representa o ``filme médio ideal'' baseando-se em tudo que o usuário gostou.
+		      \item \textbf{Centróide Negativo:} Representa a média das características que o usuário tende a rejeitar.
+	      \end{itemize}
+
+	\item \textbf{Síntese do Vetor do Usuário:} Aplica-se a equação de Rocchio (discutida na seção anterior) para fundir estes dois centróides. O vetor resultante aponta para uma região do espaço vetorial que maximiza a proximidade com os gostos do usuário enquanto aplica uma penalidade vetorial na direção dos desgostos.
+\end{enumerate}
+
+É importante notar que o sistema trata a ausência de dados (start a frio) de forma robusta: se não houver rejeições, o vetor é formado apenas pela média dos likes; se não houver interação alguma, o perfil é considerado nulo e a personalização é desativada.
+
+\subsubsection{Estratégias de Recomendação}
+
+Uma vez calculado o vetor do usuário, o sistema o utiliza de duas maneiras distintas para gerar sugestões:
+
+\paragraph{1. Recomendação Personalizada Pura}
+Neste modo, o sistema ignora qualquer termo de busca externo. O vetor do usuário é tratado como se fosse o vetor de um filme (``query vector''). O algoritmo calcula a Similaridade de Cosseno entre este vetor de perfil e todos os outros 10.000 filmes do banco de dados.
+
+O resultado é uma lista classificada dos filmes que estão geometricamente mais próximos do gosto consolidado do usuário. Por fim, aplica-se um filtro de exclusão para garantir que obras já avaliada ou assistidas não sejam recomendadas novamente, focando na descoberta de novos conteúdos.
+
+\paragraph{2. Busca Híbrida Ponderada (Interpolada)}
+Esta é uma aplicação sofisticada onde o perfil do usuário atua como um viés (\textit{bias}) sobre uma busca textual ou por similaridade de item.
+
+Quando o usuário busca por um filme específico ou por palavras-chave, o sistema calcula dois scores de similaridade independentes:
+\begin{itemize}
+	\item $S_{conteudo}$: A relevância do filme em relação ao termo pesquisado.
+	\item $S_{perfil}$: A afinidade do filme com o histórico do usuário.
+\end{itemize}
+
+O score final é obtido através de uma interpolação linear controlada por um parâmetro de peso ($w$):
+\begin{equation*}
+	Score_{final} = (1 - w) \cdot S_{conteudo} + w \cdot S_{perfil}
+\end{equation*}
+
+Esta abordagem permite que o sistema desempate resultados. Se o usuário buscar por ``Ação'', o sistema retornará filmes de ação, mas priorizará aqueles que também alinham com o perfil do usuário (ex: se o usuário gosta de Ficção Científica, o sistema priorizará ``Ação Sci-Fi'' sobre ``Ação Comédia''), oferecendo uma experiência de busca contextualmente personalizada.
+
+\begin{center}
+	\begin{tikzpicture}[
+			>=Stealth,
+			font=\sffamily,
+			vector/.style={thick, ->, line cap=round},
+			item/.style={circle, inner sep=2pt, draw=black!50},
+			help lines/.style={dashed, gray!40},
+			axis/.style={->, thin, gray}
+		]
+
+		\coordinate (O) at (0,0);
+
+		\draw[vector, myLColor, line width=1.5pt] (O) -- (0, 5) node[above, myLColor] (Q) {\textbf{Vetor de Busca} ($S_{conteudo}$)}
+		node[pos=0.5, left, font=\scriptsize, myLColor] {Termo: ``Ação''};
+
+		\draw[vector, purple, line width=1.5pt] (O) -- (5, 1) node[right, purple] (P) {\textbf{Vetor do Perfil} ($S_{perfil}$)}
+		node[pos=0.5, below, font=\scriptsize, purple, rotate=10] {Prefere: Sci-Fi};
+
+		\draw[vector, teal, line width=2pt] (O) -- (2.5, 4) coordinate (H);
+		\node[teal, anchor=south west] at (H) {\textbf{Busca Híbrida}};
+		\node[teal, font=\scriptsize, anchor=north west] at (H) {$(1-w)Q + wP$};
+
+		\node[item, fill=gray!30, label={[gray]left:\textit{Filme A}}] (MovieA) at (-0.5, 4.2) {};
+
+		\node[item, fill=teal!30, line width=1pt, draw=teal, label={[teal]left:\textbf{Filme B}}] (MovieB) at (1.8, 3.5) {};
+
+		\draw[->, dashed, orange, thick] (0, 3) arc (90:65:3);
+		\node[orange, font=\scriptsize, align=center] at (1.2, 4.5) {O Perfil "atrai"\\o resultado};
+
+
+		\draw[gray, thin] (O) -- (MovieB);
+
+		\matrix [draw, below left] at (current bounding box.north east) {
+			\node [label=right:\scriptsize Query Original] {};  & \draw[myLColor, thick] (0,0) -- (0.5,0); \\
+			\node [label=right:\scriptsize Viés do Usuário] {}; & \draw[purple, thick] (0,0) -- (0.5,0);   \\
+			\node [label=right:\scriptsize Score Final] {};     & \draw[teal, thick] (0,0) -- (0.5,0);     \\
+		};
+
+	\end{tikzpicture}
+\end{center}
+
+\section{Implementação}
+\divider
+
+A arquitetura do sistema foi desenvolvida em Python, estruturada em torno de uma classe central denominada \texttt{MovieRecommender}. Esta classe atua como o orquestrador principal, gerenciando desde a ingestão de dados e treinamento do modelo vetorial até a lógica de inferência para as recomendações.
+
+A implementação apoia-se nas bibliotecas \textit{pandas} para manipulação tabular de dados e \textit{scikit-learn} para a álgebra linear e cálculos de métricas de distância. Abaixo, descrevemos os módulos funcionais do sistema.
+
+\subsection{Pipeline de Dados e Persistência}
+
+O sistema adota uma estratégia híbrida de persistência de dados para garantir flexibilidade e manutenibilidade:
+
+\begin{enumerate}
+	\item \textbf{Dados Estáticos (CSV):} O catálogo base de filmes é carregado de um arquivo CSV imutável. Este dataset contém as metadados essenciais (título, gêneros, sinopse).
+	\item \textbf{Dados Dinâmicos (JSON):} Para permitir a personalização e a evolução do sistema, as interações do usuário (avaliações de ``Like/Dislike'') e novos filmes adicionados manualmente são armazenados em arquivos JSON locais.
+\end{enumerate}
+
+Durante a inicialização (\texttt{\_\_init\_\_}), o sistema realiza a fusão desses dados. O \textit{dataframe} principal é construído concatenando o catálogo base com os filmes inseridos pelo usuário, garantindo que o modelo considere ambas as fontes de informação de forma transparente.
+
+\subsection{Engenharia de Features e Treinamento}
+
+O processo de treinamento do modelo, encapsulado no método \texttt{fit} ocorre através da construção de uma matriz TF-IDF.
+
+A etapa crítica aqui é a \textbf{Concatenação de Features}. O algoritmo não analisa apenas a sinopse. Ele cria um campo sintético denominado \texttt{combined\_features}, que agrega:
+\begin{itemize}
+	\item A lista de gêneros;
+	\item As palavras-chave (\textit{keywords});
+	\item A sinopse completa (\textit{overview}).
+\end{itemize}
+
+Essa fusão textual enriquece o contexto. Por exemplo, se uma sinopse não menciona explicitamente a palavra ``Futuro'', mas o gênero é ``Sci-Fi'', a concatenação garante que o vetor resultante capture essa dimensão semântica.
+
+\subsection{Motores de Recomendação}
+
+A implementação oferece três modalidades distintas de recomendação, desenhadas para cobrir diferentes intenções de busca do usuário:
+
+\subsubsection{1. Recomendação Contextual (\textit{Item-Item})}
+Implementada no método \texttt{recommend\_by\_movie}, esta função recebe um filme de referência e busca os vizinhos mais próximos no espaço vetorial.
+\begin{itemize}
+	\item \textbf{Lógica:} Calcula o cosseno entre o vetor do filme de entrada e todos os outros vetores da matriz.
+	\item \textbf{Hibridização:} O sistema permite uma ponderação através do parâmetro \texttt{profile\_weight}. Isso possibilita misturar a similaridade do filme com o gosto pessoal do usuário. Se o peso for maior que zero, o \textit{score} final é uma média ponderada entre ``o que se parece com este filme'' e ``o que se parece com o perfil do usuário''.
+\end{itemize}
+
+\subsubsection{2. Recomendação por Palavras-Chave (\textit{Query-Item})}
+No método \texttt{recommend\_by\_keywords}, o sistema vetoriza uma consulta textual arbitrária (ex: ``viagem no tempo, robôs'') usando o mesmo vocabulário aprendido durante o treinamento. O vetor resultante é comparado contra a base de dados, permitindo buscas semânticas que vão além da correspondência exata de palavras.
+
+\subsubsection{3. Recomendação Personalizada (\textit{User-Item})}
+O método \texttt{recommend\_personal} ignora o contexto atual e foca exclusivamente no histórico do usuário. Ele gera o vetor de perfil (baseado na média de likes e dislikes explicada na Metodologia) e retorna os itens com maior alinhamento vetorial global, excluindo automaticamente títulos que o usuário já assistiu ou avaliou.
+
+\subsection{Gerenciamento de Estado e Re-Treinamento}
+
+Um diferencial da implementação é a capacidade de atualização em tempo de execução. Métodos como \texttt{add\_new\_movie} ou \texttt{save\_rating} não apenas alteram os arquivos JSON, mas também acionam gatilhos de atualização.
+
+Quando um novo filme é inserido, o sistema reconstrói o \textit{dataframe} e executa novamente o método \texttt{fit}. Isso garante que o novo título seja imediatamente vetorizado e passe a ser recomendável nas próximas consultas, sem a necessidade de reiniciar a aplicação. Da mesma forma, novas avaliações recaluculam instantaneamente o vetor do usuário, tornando a personalização responsiva.
+
+\section{Análise de Desempenho e Métricas}
+\divider
+
+A avaliação de sistemas de recomendação difere da avaliação de modelos preditivos tradicionais (como classificação ou regressão), pois a ``correção'' de uma sugestão possui um componente subjetivo inerente. Para validar a solução proposta, consideramos duas dimensões principais: a qualidade da recuperação da informação e a eficiência computacional.
+
+\subsection{Métricas de Qualidade e Análise de Casos}
+
+Dada a natureza não supervisionada da filtragem baseada em conteúdo, a validação do sistema não ocorre por uma matriz de confusão binária simples, mas sim pela análise da relevância subjetiva das recomendações. Para quantificar esse desempenho, adotamos a métrica de \textbf{Precisão no Top-k (P@k)}.
+
+Esta métrica avalia a proporção de itens relevantes dentro das $k$ primeiras sugestões oferecidas pelo algoritmo, conforme a equação:
+
+\begin{equation*}
+	P@k = \frac{\text{Itens Relevantes no Top } k}{k}
+\end{equation*}
+
+Abaixo, analisamos o comportamento do algoritmo em dois cenários de teste distintos ($k=5$), baseados em execuções reais do sistema.
+
+\subsubsection*{Cenário 1: Consistência Temática (Caso ``Apocalypse Now'')}
+Ao solicitar recomendações para o clássico de guerra \textit{Apocalypse Now}, o sistema retornou os seguintes resultados no Top 5:
+
+\begin{enumerate}
+	\item \textit{The Green Berets} (Similaridade: 41\%)
+	\item \textit{Full Metal Jacket} (Similaridade: 40\%)
+	\item \textit{Casualties of War} (Similaridade: 37\%)
+	\item \textit{Uncommon Valor} (Similaridade: 37\%)
+	\item \textit{Missing in Action} (Similaridade: 36\%)
+\end{enumerate}
+
+\textbf{Análise:} O algoritmo demonstrou robustez excepcional neste cenário. Todos os cinco filmes recomendados pertencem estritamente ao gênero de Guerra, com forte correlação ao subgênero da Guerra do Vietnã. A sobreposição de vocabulário bélico (termos como ``soldier'', ``war'', ``vietnam'', ``mission'') garantiu uma clusterização perfeita.
+\begin{itemize}
+	\item \textbf{Resultado:} $P@5 = 1.0$ (100\% de precisão).
+\end{itemize}
+
+\subsubsection*{Cenário 2: Ruído Semântico (Caso ``Toy Story'')}
+Para a animação infantil \textit{Toy Story}, o sistema apresentou o seguinte comportamento:
+
+\begin{enumerate}
+	\item \textit{Toy Story 3} (Similaridade: 47\%)
+	\item \textit{Toy Story 4} (Similaridade: 45\%)
+	\item \textit{Toy Story 2} (Similaridade: 43\%)
+	\item \textit{Small Soldiers} (Similaridade: 35\%)
+	\item \textit{The 40 Year Old Virgin} (Similaridade: 34\%)
+\end{enumerate}
+
+\textbf{Análise:} As três primeiras posições foram ocupadas pelas sequências da franquia, o que é o comportamento ideal (máxima relevância). O quarto item, \textit{Small Soldiers}, mantém a coerência temática (brinquedos que ganham vida).
+
+Contudo, o quinto item, \textit{The 40 Year Old Virgin}, representa um \textbf{Falso Positivo}. Embora seja uma comédia adulta, é possível que a sinopse do filme, que contém palavras-chave como ``Andy'', ``enganou'' o algoritmo TF-IDF. O modelo matemático pode ter identificado a coincidência léxica da palavra ``Andy'', a criança de \textit{Toy Story} chama-se Andy igual ao protagonista de \textit{The 40 Year Old Virgin}, mas falhou em capturar a distinção de público-alvo (Infantil vs. Adulto).
+
+\begin{itemize}
+	\item \textbf{Resultado:} $P@5 = 0.8$ (80\% de precisão).
+\end{itemize}
+
+\subsubsection*{Conclusão das Métricas}
+Os testes indicam que o sistema possui alta precisão para nichos com vocabulário denso e específico (como Guerra ou Sci-Fi). Entretanto, observa-se uma ligeira degradação de desempenho quando termos polissêmicos ou objetos (como ``brinquedos'') aparecem em contextos narrativos divergentes, evidenciando as limitações naturais de uma abordagem puramente baseada em frequência de termos (TF-IDF) sem análise de sentimento ou contexto profundo.
+
+\section{Limitações e Possibilidades de Evolução}
+\divider
+
+\subsection{Limitações do Modelo Atual}
+
+\subsubsection{1. O Problema do Início Frio (Cold Start)}
+Identificamos duas vertentes deste problema clássico:
+\begin{itemize}
+	\item \textbf{Novo Usuário:} Sem histórico de avaliações, o vetor do perfil do usuário ($\vec{v}_{user}$) é nulo. O sistema não consegue personalizar recomendações até que ocorra a primeira interação.
+	\item \textbf{Novo Item:} Embora o sistema consiga recomendar um filme novo imediatamente após sua inserção (vantagem sobre a Filtragem Colaborativa), ele depende inteiramente da qualidade da sinopse inserida. Uma descrição pobre ou vaga resulta em um vetor fraco, tornando o filme ``invisível'' nas recomendações.
+\end{itemize}
+
+\subsubsection{2. Limitação Semântica do TF-IDF}
+O algoritmo baseia-se na \textit{coincidência léxica}, não no significado semântico profundo.
+\textit{Exemplo:} Se um filme contém a palavra ``automóvel'' e outro a palavra ``carro'', o TF-IDF pode não capturar a similaridade, a menos que ambas as palavras ocorram nos documentos. O sistema não ``entende'' que são sinônimos, apenas compara strings.
+
+\subsection{Possibilidades de Evolução}
+
+Para mitigar as limitações supracitadas, propomos as seguintes evoluções para iterações futuras do projeto:
+
+\begin{enumerate}
+	\item \textbf{Word Embeddings:}
+	      Substituir o TF-IDF por modelos de linguagem baseados em Redes Neurais (Transformers). Isso permitiria capturar relações semânticas complexas. O sistema entenderia que ``Rei'' e ``Rainha'' estão matematicamente próximos, resolvendo a limitação da coincidência léxica.
+
+	\item \textbf{Sistema Híbrido:}
+	      Implementar uma camada de \textit{Collaborative Filtering} (Filtragem Colaborativa). Ao cruzar dados de múltiplos usuários, o sistema poderia recomendar itens baseado no padrão de consumo de pessoas parecidas, introduzindo diversidade e resolvendo o problema da superespecialização.
+
+	\item \textbf{Redução de Dimensionalidade:}
+	      Aplicar técnicas de decomposição de matrizes para reduzir o espaço vetorial de 5.000 para, por exemplo, 100 componentes principais latentes. Isso aumentaria a velocidade de processamento e ajudaria a agrupar conceitos similares, melhorando a generalização do modelo.
+\end{enumerate}
 
 \end{document}
