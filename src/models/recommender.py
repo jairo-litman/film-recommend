@@ -1,6 +1,6 @@
 from typing import Any, Dict, List, Optional
 import pandas as pd
-from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 import os
 import json
@@ -18,7 +18,13 @@ class MovieRecommender:
         self.json_movies = json_movies
         self.json_ratings = json_ratings
 
-        self.vectorizer = CountVectorizer(max_features=5000, stop_words="english")
+        self.vectorizer = TfidfVectorizer(
+            max_features=5000,
+            stop_words="english",
+            ngram_range=(1, 2),  # Include unigrams and bigrams
+            min_df=2,  # Ignore terms that appear in less than 2 documents
+            max_df=0.8  # Ignore terms that appear in more than 80% of documents
+        )
         self.vectors: Optional[np.ndarray] = None
         self.df: pd.DataFrame = self._load_movies()
         self.ratings: Dict[str, str] = self._load_ratings()
