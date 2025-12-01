@@ -19,7 +19,7 @@ class MovieRecommender:
         self.json_ratings = json_ratings
 
         self.vectorizer = TfidfVectorizer(
-            max_features=5000,
+            max_features=20_000,
             stop_words="english",
             ngram_range=(1, 2),  # Include unigrams and bigrams
             min_df=2,  # Ignore terms that appear in less than 2 documents
